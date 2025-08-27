@@ -4,7 +4,7 @@
   "description": "CLI Trading Bot for Gate.io",
   "main": "dist/index.js",
   "scripts": {
-    "start": "npx ts-node src/index.ts",
+    "start": "npx ts-node ./src/index.ts",
     "build": "tsc"
   },
   "keywords": [

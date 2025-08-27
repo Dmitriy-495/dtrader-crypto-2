@@ -1,0 +1,13 @@
+# Dependencies
+/node_modules
+
+# Compiled code
+/dist
+
+# Environment files
+.env
+
+# IDE and OS logs
+.idea/
+.vscode/
+*.DS_Store

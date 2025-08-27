@@ -1,0 +1,13 @@
+--- Session started at 2025-08-27T13:52:09.267Z ---
+[2025-08-27T13:52:09.268Z] [INFO   ] Приложение запускается...
+[2025-08-27T13:52:09.297Z] [ERROR  ] КРИТИЧЕСКАЯ ОШИБКА: TypeError: Cannot read properties of undefined (reading 'width')
+    at new Document (/home/tda/code/dtrader-crypto/node_modules/terminal-kit/lib/document/Document.js:46:43)
+    at createLayout (/home/tda/code/dtrader-crypto/src/ui/layout.ts:29:20)
+    at Timeout.main [as _onTimeout] (/home/tda/code/dtrader-crypto/src/index.ts:54:19)
+    at listOnTimeout (node:internal/timers:608:17)
+    at processTimers (node:internal/timers:543:7)
+[2025-08-27T13:52:09.297Z] [INFO   ] Блок finally: освобождаем ресурсы терминала.
+--- Session started at 2025-08-27T14:06:35.667Z ---
+--- Session started at 2025-08-27T14:22:10.898Z ---
+--- Session started at 2025-08-27T14:24:59.947Z ---
+--- Session started at 2025-08-27T14:32:06.069Z ---

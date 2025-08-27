@@ -1,167 +1,89 @@
-// src/index.ts
+// src/ui/layout.ts
 
-import "dotenv/config";
 const termkit = require("terminal-kit");
-// Мы НЕ используем `termkit.terminal` до вызова callback.
 
-import { createLayout } from "./ui/layout";
-import { eventBus } from "./services/eventBus";
-import { GateioService } from "./services/gateio";
-import { StrategyManager } from "./core/StrategyManager";
-import { DemoStrategy } from "./strategies/DemoStrategy";
-import { formatNumber } from "./core/helpers";
-import { LogToFileService } from "./services/LogToFileService";
-import {
-  LogMessage,
-  LogLevel,
-  PriceUpdate,
-  BalanceUpdate,
-  ConnectionState,
-  PongUpdate,
-  TradeSignal,
-} from "./types";
-
-const logLevelStyles: Record<LogLevel, { color: string; icon: string }> = {
-  SUCCESS: { color: "green", icon: "✔" },
-  INFO: { color: "cyan", icon: "»" },
-  WARN: { color: "yellow", icon: "▲" },
-  ERROR: { color: "red", icon: "✖" },
-  TRADE: { color: "magenta", icon: "⚡" },
-};
-
-let isShuttingDown = false;
-
-function gracefulShutdown(terminal: any, code: number = 0): void {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  terminal.grabInput(false);
-  setTimeout(() => {
-    console.log(`\nПроцесс завершен с кодом ${code}.`);
-    process.exit(code);
-  }, 200);
-}
+// Мы извлекаем КОНСТРУКТОРЫ классов, чтобы создавать виджеты.
+const Document = termkit.Document;
+const TextBox = termkit.TextBox;
+const Layout = termkit.Layout;
+const Log = termkit.Log;
+const SingleLineInput = termkit.SingleLineInput;
+const Palette = termkit.Palette;
 
 /**
- * Основная точка входа в приложение.
- * @param terminal - Гарантированно инициализированный экземпляр терминала.
+ * Функция для создания основного макета интерфейса.
+ * @param terminal - Гарантированно инициализированный экземпляр terminal-kit.
  */
-async function main(terminal: any) {
-  // Получаем конструктор TextBox из модуля.
-  const TextBox = termkit.TextBox;
-
-  try {
-    const logToFileService = new LogToFileService();
-
-    // --- ИНИЦИАЛИЗАЦИЯ UI С ИСПОЛЬЗОВАНИЕМ ГОТОВОГО `terminal` ---
-    terminal.clear();
-    // Передаем готовый `terminal` в функцию создания UI.
-    const { document, mainContent, sidebar, footer, statusWidget } =
-      createLayout(terminal);
-
-    // --- АКТИВАЦИЯ ПОДПИСОК ---
-    eventBus.on("log", (log: LogMessage) => {
-      const style = logLevelStyles[log.level] ?? logLevelStyles["INFO"];
-      const timestamp = new Date().toLocaleTimeString();
-      sidebar.log(
-        `^${style.color}${style.icon}^: [${timestamp}] ${log.message}`
-      );
-    });
-
-    logToFileService.startListening();
-    eventBus.emit("log", {
-      level: "INFO",
-      message: "Приложение запускается...",
-    });
-    eventBus.emit("log", {
-      level: "SUCCESS",
-      message: "UI успешно инициализирован.",
-    });
-
-    // ... (остальной код создания виджетов, сервисов, подписок на события) ...
-    const balanceWidget = new TextBox({
-      /* ... */
-    });
-    const priceWidget = new TextBox({
-      /* ... */
-    });
-    const apiKey = process.env.GATE_API_KEY,
-      apiSecret = process.env.GATE_API_SECRET;
-    if (!apiKey || !apiSecret) throw new Error("Ключи API не найдены.");
-    const gateioService = new GateioService(apiKey, apiSecret);
-    const strategyManager = new StrategyManager();
-    strategyManager.addStrategy(new DemoStrategy());
-    let connectionStatus: ConnectionState = "disconnected";
-    let lastLatency = 0;
-    const priceCache = {};
-    const updateStatusWidget = () => {
-      /* ... */
-    };
-    eventBus.on("connection:state", ({ state }) => {
-      connectionStatus = state;
-      updateStatusWidget();
-    });
-    eventBus.on("connection:pong", ({ latency }) => {
-      lastLatency = latency;
-      updateStatusWidget();
-    });
-    eventBus.on("update:price", (data) => {
-      /* ... */
-    });
-    eventBus.on("update:balance", (data) => {
-      /* ... */
-    });
-    eventBus.on("trade:execute", (signal) => {
-      /* ... */
-    });
-
-    footer.on("submit", (command: string) => {
-      // ... (обработка команд, вызывает gracefulShutdown(terminal) при 'exit') ...
-    });
-
-    // --- Обработчики используют переданный `terminal` ---
-    terminal.on("key", (name: string) => {
-      if (name === "CTRL_C") {
-        eventBus.emit("log", {
-          level: "WARN",
-          message: "Получен сигнал CTRL+C...",
-        });
-        gracefulShutdown(terminal);
-      }
-    });
-
-    terminal.grabInput({ mouse: "button" });
-    document.focusNext();
-
-    await gateioService.connect();
-
-    eventBus.emit("log", { level: "SUCCESS", message: "Бот готов к работе." });
-  } catch (error) {
-    const errorMessage = `КРИТИЧЕСКАЯ ОШИБКА: ${
-      (error as Error).stack || (error as Error).message
-    }`;
-    try {
-      eventBus.emit("log", { level: "ERROR", message: errorMessage });
-    } catch (e) {}
-    console.error("\n" + errorMessage);
-    gracefulShutdown(terminal, 1);
-  }
-}
-
-// --- ИСТИННАЯ, ЕДИНСТВЕННО ВЕРНАЯ ТОЧКА ВХОДА ---
-// Вызываем метод `getDetectedTerminal` на самом модуле `termkit`.
-termkit.getDetectedTerminal((error: Error | null, term: any) => {
-  if (error) {
-    console.error(
-      "Критическая ошибка: Не удалось инициализировать терминал.",
-      error
-    );
-    process.exit(1);
-  }
-
-  // `term` - это ГОТОВЫЙ к работе экземпляр.
-  // Запускаем основную логику, передавая ей этот готовый экземпляр.
-  main(term).catch((err) => {
-    console.error("Необработанная критическая ошибка в main:", err);
-    gracefulShutdown(term, 1);
+export function createLayout(terminal: any) {
+  // --- ЕДИНСТВЕННО ВЕРНЫЙ СПОСОБ ---
+  // Мы используем тот `terminal`, который нам передали как аргумент.
+  // У него гарантированно есть свойство .width и .height.
+  const document = new Document({
+    term: terminal, // Явно передаем готовый экземпляр.
+    palette: new Palette(),
   });
-});
+
+  // Все остальные обращения к свойствам (width, height, brightCyan)
+  // теперь также идут через переданный `terminal`.
+  const header = new TextBox({
+    parent: document,
+    x: 0,
+    y: 0,
+    width: terminal.width,
+    height: 3,
+    attr: { bgColor: terminal.brightCyan, color: "black" },
+    content: `  ^+^bdtrader-crypto^: | Gate.io Trading Bot`,
+    contentHasMarkup: true,
+  });
+
+  const statusWidget = new TextBox({
+    parent: header,
+    contentHasMarkup: true,
+    x: terminal.width - 26,
+    y: 1,
+    width: 24,
+    height: 1,
+    attr: { bgColor: terminal.brightCyan },
+    content: `^y... подключение^:`,
+  });
+
+  const mainContent = new Layout({
+    parent: document,
+    x: 0,
+    y: 3,
+    width: Math.floor(terminal.width * 0.65),
+    height: terminal.height - 4,
+    layout: {
+      id: "main",
+      y: 0,
+      width: "100%",
+      height: "100%",
+      rows: [
+        { id: "row1", heightPercent: 40 },
+        { id: "row2", heightPercent: 60 },
+      ],
+    },
+  });
+
+  const sidebar = new Log({
+    parent: document,
+    x: mainContent.outputWidth,
+    y: 3,
+    width: terminal.width - mainContent.outputWidth,
+    height: terminal.height - 4,
+    autoScroll: true,
+    vScrollBar: true,
+    wordWrap: true,
+  });
+
+  const footer = new SingleLineInput({
+    parent: document,
+    x: 0,
+    y: terminal.height - 1,
+    width: terminal.width,
+    height: 1,
+    options: { prompt: "Команда: " },
+  });
+
+  return { document, mainContent, sidebar, footer, statusWidget };
+}

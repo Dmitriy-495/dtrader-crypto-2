@@ -2,7 +2,7 @@
 
 const termkit = require("terminal-kit");
 
-// Мы все еще извлекаем КОНСТРУКТОРЫ классов отсюда.
+// Мы извлекаем КОНСТРУКТОРЫ классов, чтобы создавать виджеты.
 const Document = termkit.Document;
 const TextBox = termkit.TextBox;
 const Layout = termkit.Layout;
@@ -15,11 +15,11 @@ const Palette = termkit.Palette;
  * @param terminal - Гарантированно инициализированный экземпляр terminal-kit.
  */
 export function createLayout(terminal: any) {
-  // --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ---
+  // --- ЕДИНСТВЕННО ВЕРНЫЙ СПОСОБ ---
   // Мы используем тот `terminal`, который нам передали как аргумент.
+  // У него гарантированно есть свойство .width и .height.
   const document = new Document({
-    // Явно передаем готовый экземпляр.
-    term: terminal,
+    term: terminal, // Явно передаем готовый экземпляр.
     palette: new Palette(),
   });
 

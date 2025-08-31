@@ -17,6 +17,7 @@ build/
 # Логи
 logs/
 *.log
+*.log.*
 
 # Временные файлы
 .tmp/
@@ -39,3 +40,12 @@ Thumbs.db
 # Кэш
 .cache/
 *.cache
+
+# Debug
+debug.log
+.debug/
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock

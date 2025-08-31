@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { eventBusLogger } from '../utils/Logger';
 
 /**
  * Типы событий в системе
@@ -22,80 +23,67 @@ export interface AppEvents {
 
 /**
  * Расширенный Event Bus для торгового бота
- * Обеспечивает типизированный обмен событиями между компонентами
  */
 export class EventBus extends EventEmitter {
     private readonly maxListeners: number;
-    private readonly debugMode: boolean;
+    private readonly enableLogging: boolean;
 
-    constructor(maxListeners: number = 50, debugMode: boolean = false) {
+    constructor(maxListeners: number = 50, enableLogging: boolean = true) {
         super();
         this.maxListeners = maxListeners;
-        this.debugMode = debugMode;
+        this.enableLogging = enableLogging;
         this.setMaxListeners(this.maxListeners);
 
         this.setupErrorHandling();
-        this.setupDebugLogging();
+        this.setupEventLogging();
+
+        eventBusLogger.logEvent('eventbus:initialized', 0, { maxListeners });
     }
 
-    /**
-     * Настройка обработки ошибок EventBus
-     */
     private setupErrorHandling(): void {
         this.on('error', (error: Error) => {
-            console.error('[EventBus] Ошибка:', error.message);
+            eventBusLogger.logError('eventbus:error', error);
         });
 
-        // Предотвращение падения приложения при необработанных событиях
         this.on('newListener', (eventName: string) => {
-            if (this.debugMode) {
-                console.log(
-                    `[EventBus] Новый слушатель для события: ${eventName}`
-                );
-            }
+            const totalListeners = this.listenerCount(eventName) + 1;
+            eventBusLogger.logListenerAdd(eventName, totalListeners);
         });
 
         this.on('removeListener', (eventName: string) => {
-            if (this.debugMode) {
-                console.log(
-                    `[EventBus] Удален слушатель для события: ${eventName}`
-                );
-            }
+            const totalListeners = this.listenerCount(eventName) - 1;
+            eventBusLogger.logListenerRemove(eventName, totalListeners);
         });
     }
 
-    /**
-     * Настройка отладочного логирования
-     */
-    private setupDebugLogging(): void {
-        if (this.debugMode) {
+    private setupEventLogging(): void {
+        if (this.enableLogging) {
             const originalEmit = this.emit.bind(this);
             this.emit = (
                 eventName: string | symbol,
                 ...args: any[]
             ): boolean => {
-                console.log(
-                    `[EventBus] Событие: ${String(eventName)}, Аргументы:`,
-                    args.length
-                );
+                const listeners = this.listenerCount(eventName);
+                eventBusLogger.logEvent(String(eventName), listeners, {
+                    argsCount: args.length,
+                });
                 return originalEmit(eventName, ...args);
             };
         }
     }
 
-    /**
-     * Типизированный emit для событий приложения
-     */
     public emitTyped<K extends keyof AppEvents>(
         event: K,
         ...args: Parameters<AppEvents[K]>
     ): boolean {
-        return this.emit(event, ...args);
+        try {
+            return this.emit(event, ...args);
+        } catch (error) {
+            eventBusLogger.logError(event, error as Error);
+            return false;
+        }
     }
 
-    /**
-     * Типизированный on для событий приложения
-     */
     public onTyped<K extends keyof AppEvents>(
         event: K,
         listener: AppEvents[K]
@@ -103,9 +91,6 @@ export class EventBus extends EventEmitter {
         return this.on(event, listener);
     }
 
-    /**
-     * Типизированный once для событий приложения
-     */
     public onceTyped<K extends keyof AppEvents>(
         event: K,
         listener: AppEvents[K]
@@ -113,9 +98,6 @@ export class EventBus extends EventEmitter {
         return this.once(event, listener);
     }
 
-    /**
-     * Типизированный off для событий приложения
-     */
     public offTyped<K extends keyof AppEvents>(
         event: K,
         listener: AppEvents[K]
@@ -123,9 +105,6 @@ export class EventBus extends EventEmitter {
         return this.off(event, listener);
     }
 
-    /**
-     * Получение информации о текущих слушателях
-     */
     public getListenersInfo(): Record<string, number> {
         const info: Record<string, number> = {};
         const events = this.eventNames();
@@ -134,29 +113,20 @@ export class EventBus extends EventEmitter {
             info[String(event)] = this.listenerCount(event);
         }
 
+        eventBusLogger.logEvent('eventbus:stats', 0, { listenersInfo: info });
         return info;
     }
 
-    /**
-     * Безопасное удаление всех слушателей
-     */
     public cleanup(): void {
-        if (this.debugMode) {
-            console.log('[EventBus] Очистка всех слушателей...');
-        }
-
+        eventBusLogger.logEvent('eventbus:cleanup', 0);
         this.removeAllListeners();
     }
 
-    /**
-     * Проверка наличия слушателей для события
-     */
     public hasListeners(event: keyof AppEvents): boolean {
         return this.listenerCount(event) > 0;
     }
 }
 
-// Создание глобального экземпляра EventBus
 export const eventBus = new EventBus(
     parseInt(process.env.EVENT_BUS_MAX_LISTENERS || '50'),
     process.env.NODE_ENV === 'development'

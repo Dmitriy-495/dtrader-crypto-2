@@ -1,25 +1,23 @@
 #!/usr/bin/env node
 
+import 'dotenv/config'; // ДОБАВЛЕНО: Загрузка переменных окружения
 import { EventBus, eventBus } from './core/EventBus';
 import { TerminalManager } from './core/TerminalManager';
+import { logger, createTimer } from './utils/Logger';
 
-/**
- * Интерфейс конфигурации приложения
- */
 interface AppConfig {
     name: string;
     version: string;
     environment: string;
 }
 
-/**
- * Основной класс торгового бота dtrader-crypto 2.0
- */
-class DTraderCrypto {
+export class DTraderCrypto {
     private readonly config: AppConfig;
     private readonly eventBus: EventBus;
     private readonly terminalManager: TerminalManager;
+    private readonly appLogger = logger.child({ module: 'app' });
     private isRunning: boolean = false;
+    private startTime?: ReturnType<typeof createTimer>;
 
     constructor(eventBus: EventBus) {
         this.eventBus = eventBus;
@@ -29,7 +27,10 @@ class DTraderCrypto {
             environment: process.env.NODE_ENV || 'development',
         };
 
-        // Инициализация терминального менеджера
+        this.appLogger.info('Создание экземпляра DTraderCrypto', {
+            config: this.config,
+        });
+
         this.terminalManager = new TerminalManager(this.eventBus, {
             colors: process.env.TERMINAL_COLORS !== 'false',
             unicode: process.env.TERMINAL_UNICODE !== 'false',
@@ -41,9 +42,6 @@ class DTraderCrypto {
         this.setupProcessHandlers();
     }
 
-    /**
-     * Настройка слушателей событий
-     */
     private setupEventListeners(): void {
         this.eventBus.onTyped('app:start', this.handleAppStart.bind(this));
         this.eventBus.onTyped('app:stop', this.handleAppStop.bind(this));
@@ -57,83 +55,90 @@ class DTraderCrypto {
             'terminal:resize',
             this.handleTerminalResize.bind(this)
         );
+
+        this.appLogger.debug('Event listeners настроены');
     }
 
-    /**
-     * Настройка обработчиков процесса
-     */
     private setupProcessHandlers(): void {
-        // Обработка сигналов завершения
         process.on('SIGINT', () => {
+            this.appLogger.warn('Получен сигнал SIGINT');
             this.eventBus.emitTyped('terminal:exit');
         });
 
         process.on('SIGTERM', () => {
+            this.appLogger.warn('Получен сигнал SIGTERM');
             this.eventBus.emitTyped('terminal:exit');
         });
 
-        // Обработка необработанных исключений
         process.on('uncaughtException', (error: Error) => {
+            this.appLogger.error('Необработанное исключение', {
+                error: {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                },
+            });
             this.terminalManager.showError('Необработанная ошибка', error);
             this.gracefulShutdown();
         });
 
-        process.on('unhandledRejection', (reason: unknown) => {
-            const error =
-                reason instanceof Error ? reason : new Error(String(reason));
-            this.terminalManager.showError(
-                'Необработанное отклонение Promise',
-                error
-            );
-            this.gracefulShutdown();
-        });
+        process.on(
+            'unhandledRejection',
+            (reason: unknown, promise: Promise<any>) => {
+                this.appLogger.error('Необработанное отклонение Promise', {
+                    reason: String(reason),
+                    promise: promise.toString(),
+                });
+                this.terminalManager.showError(
+                    'Необработанное отклонение Promise',
+                    reason instanceof Error ? reason : new Error(String(reason))
+                );
+                this.gracefulShutdown();
+            }
+        );
+
+        this.appLogger.debug('Process handlers настроены');
     }
 
-    /**
-     * Обработка запуска приложения
-     */
     private handleAppStart(): void {
+        this.startTime = createTimer();
         this.isRunning = true;
+        this.appLogger.info('Приложение запущено');
         this.terminalManager.showInfo('Приложение успешно запущено');
     }
 
-    /**
-     * Обработка остановки приложения
-     */
     private handleAppStop(): void {
+        const duration = this.startTime ? this.startTime() : 0;
         this.isRunning = false;
+
+        this.appLogger.info('Приложение остановлено', {
+            uptime: duration,
+            sessionId: this.terminalManager.getSessionInfo().id,
+        });
+
         this.terminalManager.showInfo('Остановка торгового бота...');
     }
 
-    /**
-     * Обработка ошибок приложения
-     */
     private handleAppError(error: Error): void {
+        this.appLogger.errorWithContext(error, 'Ошибка приложения');
         this.terminalManager.showError('Ошибка приложения', error);
     }
 
-    /**
-     * Обработка выхода
-     */
     private handleExit(): void {
+        this.appLogger.info('Обработка выхода из приложения');
         this.gracefulShutdown();
     }
 
-    /**
-     * Обработка нажатий клавиш
-     */
     private handleTerminalKey(keyName: string, data: any): void {
-        // Здесь можно добавить обработку специфичных команд бота
-        // Пока просто логируем в режиме разработки
-        if (this.config.environment === 'development') {
-            // Логирование уже происходит в TerminalManager
-        }
+        this.appLogger.debug('Обработка нажатия клавиши', {
+            keyName,
+            environment: this.config.environment,
+        });
     }
 
-    /**
-     * Обработка изменения размера терминала
-     */
     private handleTerminalResize(width: number, height: number): void {
+        this.appLogger.debug('Изменение размера терминала', { width, height });
+
         if (this.config.environment === 'development') {
             this.terminalManager.showInfo(
                 `Размер терминала изменен: ${width}x${height}`
@@ -141,15 +146,18 @@ class DTraderCrypto {
         }
     }
 
-    /**
-     * Корректное завершение работы
-     */
     private gracefulShutdown(): void {
         if (!this.isRunning) {
+            this.appLogger.warn(
+                'Попытка завершения уже остановленного приложения'
+            );
             return;
         }
 
+        const shutdownTimer = createTimer();
         this.isRunning = false;
+
+        this.appLogger.info('Начало корректного завершения работы');
 
         // Отправка события остановки
         this.eventBus.emitTyped('app:stop');
@@ -159,46 +167,90 @@ class DTraderCrypto {
 
         // Очистка Event Bus
         this.eventBus.cleanup();
+
+        const shutdownDuration = shutdownTimer();
+        this.appLogger.info('Корректное завершение завершено', {
+            duration: shutdownDuration,
+        });
     }
 
-    /**
-     * Запуск приложения
-     */
     public start(): void {
         try {
+            this.appLogger.info(`Запуск ${this.config.name}`, {
+                version: this.config.version,
+                environment: this.config.environment,
+                nodeVersion: process.version,
+            });
+
             this.terminalManager.showInfo(`Запуск ${this.config.name}...`);
             this.eventBus.emitTyped('app:start');
         } catch (error) {
             const err =
                 error instanceof Error ? error : new Error(String(error));
+            this.appLogger.errorWithContext(
+                err,
+                'Ошибка при запуске приложения'
+            );
             this.eventBus.emitTyped('app:error', err);
         }
     }
 
-    /**
-     * Получение конфигурации приложения
-     */
     public getConfig(): AppConfig {
         return { ...this.config };
     }
 
-    /**
-     * Проверка состояния приложения
-     */
     public isAppRunning(): boolean {
         return this.isRunning;
     }
 }
 
-/**
- * Основная функция запуска приложения
- */
 async function main(): Promise<void> {
+    const mainTimer = createTimer();
+
     try {
+        logger.info('='.repeat(60));
+        logger.info('Запуск dtrader-crypto 2.0', {
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            pid: process.pid,
+        });
+        logger.info('='.repeat(60));
+
+        // Валидация окружения
+        const requiredEnvVars = ['GATE_API_KEY', 'GATE_SECRET_KEY'];
+        const missingVars = requiredEnvVars.filter(
+            (varName) => !process.env[varName]
+        );
+
+        if (missingVars.length > 0) {
+            throw new Error(
+                `Отсутствуют обязательные переменные окружения: ${missingVars.join(', ')}`
+            );
+        }
+
+        logger.info('Валидация переменных окружения пройдена');
+
         const app = new DTraderCrypto(eventBus);
         app.start();
+
+        const startupDuration = mainTimer();
+        logger.info('Приложение успешно запущено', {
+            startupTime: startupDuration,
+        });
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
+        const startupDuration = mainTimer();
+
+        logger.error('Критическая ошибка при запуске', {
+            error: {
+                name: err.name,
+                message: err.message,
+                stack: err.stack,
+            },
+            startupTime: startupDuration,
+        });
+
         console.error('❌ Критическая ошибка при запуске:', err.message);
 
         if (process.env.NODE_ENV === 'development') {
@@ -212,10 +264,16 @@ async function main(): Promise<void> {
 // Запуск приложения только при прямом выполнении файла
 if (require.main === module) {
     main().catch((error) => {
+        logger.error('Фатальная ошибка', {
+            error: {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+            },
+        });
         console.error('💥 Фатальная ошибка:', error);
         process.exit(1);
     });
 }
 
-// Экспорт для возможного использования как модуля
-export { DTraderCrypto, EventBus, TerminalManager };
+export { EventBus, TerminalManager };
